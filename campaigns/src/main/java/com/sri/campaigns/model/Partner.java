@@ -22,7 +22,7 @@ import javax.persistence.Table;
  */
 
 @Entity
-@NamedQuery(name = "Partner.findByPartener", query = "SELECT p FROM Partner p WHERE LOWER(p.partner_id) = LOWER(?1)")
+@NamedQuery(name = "Partner.findByPartener", query = "SELECT p FROM Partner p WHERE LOWER(p.partnerId) = LOWER(?1)")
 @Table(name = "partner")
 public class Partner {
 
