@@ -1,0 +1,323 @@
+angular.module('sri.customTag.module').directive('SriUiGrid', SriUiGrid);
+
+function SriUiGrid() {
+    return {
+        restrict: 'E',
+        replace: true,
+        scope: {
+            paginationOptions: '=',
+            disablePagination: '@',
+            gridOptions: '=',
+            url: '@',
+            searchFilter: '=',
+            appId : '=',
+            multiSelect : '@',
+            enableCellSelection : '@'
+        },
+
+        templateUrl: SriUiGridUrl,
+
+        controller: SriUiGridController,
+        controllerAs: 'vm',
+        bindToController: true,
+    };
+}
+
+function SriUiGridUrl(elem, attrs) {
+    if(attrs.enableCellSelection === undefined) {
+        return 'app/templates/Sri-ui-grid.html';
+    }
+    return 'app/templates/Sri-ui-multiSelect-grid.html';
+}
+
+SriUiGridController.$inject = ['$scope', '$attrs', '$resource' ,'uiGridConstants', '$localStorage', 'SriApiService'];
+function SriUiGridController($scope, $attrs, $resource ,uiGridConstants, $localStorage, $SriApiService) {
+
+    var vm = this;
+
+    vm.resource = $resource;
+    //vm.localStorage = $localStorage;
+    vm.apiService = $SriApiService;
+
+    if(vm.paginationOptions === undefined) {
+        vm.paginationInfo = vm.defaultPaginationOptions();
+    } else {
+        vm.paginationInfo = vm.paginationOptions;
+    }
+
+    vm.original = angular.copy(vm.gridOptions);
+    for (var i=0, item; i <  vm.original.columnDefs.length; i++)  {
+        var temap =vm.gridOptions.columnDefs[i];
+        temap.sortDirectionCycle=["asc", "desc"];
+
+
+    }
+
+
+    vm.gridValues = vm.defaultGridValues(uiGridConstants);
+
+    if(vm.gridOptions.isRowSelectable !== undefined) {
+        vm.isRowSelectable();
+    }
+
+    vm.gridValues.onRegisterApi =  function(gridApi) {
+        vm.gridApi = gridApi;
+        //vm.gridApi.core.on.columnVisibilityChanged(null,  saveState.bind(vm));
+        vm.gridApi.selection.on.rowSelectionChangedBatch(null, selectAll.bind(vm));
+        vm.gridApi.selection.on.rowSelectionChanged(null, vm.onRowSelect.bind(vm));
+
+        if(vm.enableCellSelection !== undefined) {
+            vm.gridApi.cellNav.on.navigate(null, vm.onCellSelect.bind(vm));
+        }
+
+        if(vm.multiSelect === undefined || vm.multiSelect === 'false') {
+            vm.gridApi.core.on.sortChanged(null, vm.saveSortInfo.bind(vm));
+        }
+
+        vm.getData();
+    };
+
+    if(vm.gridOptions.columnDefs) {
+        vm.gridValues.columnDefs = vm.gridOptions.columnDefs;
+    }
+
+    vm.gridValues.appScopeProvider = vm;
+    vm.appendExternalFunctions();
+
+    vm.gridOptions.refreshGrid = function() {
+        vm.getData();
+    }.bind(vm);
+
+    vm.gridOptions.refresh = function() {
+        vm.refresh();
+    }.bind(vm);
+
+    vm.gridOptions.onBack = function() {
+        vm.onBack();
+    }.bind(vm);
+
+    vm.gridOptions.onNext = function() {
+        vm.onNext();
+    }.bind(vm);
+
+    //var saveState = function()  {
+    //    var state;
+    //    state =  vm.gridApi.saveState.save();
+    //    $localStorage[vm.appId + 'grid'] = state;
+    //};
+
+    var selectAll = function()  {
+        vm.gridOptions.selectedRows = vm.gridApi.selection.getSelectedRows();
+    };
+}
+
+SriUiGridController.prototype.refresh =function() {
+    this.gridApi.grid.refresh();
+};
+
+SriUiGridController.prototype.appendExternalFunctions = function() {
+    if(this.gridOptions.externalFunctions === undefined) {
+        return;
+    }
+    for (var key in this.gridOptions.externalFunctions) {
+        if (this.gridOptions.externalFunctions.hasOwnProperty(key)) {
+            this[key] = this.gridOptions.externalFunctions[key];
+        }
+    }
+};
+
+SriUiGridController.prototype.onCellSelect = function(newRowCol, oldRowCol) {
+    this.gridOptions.selectedRows = this.gridApi.selection.getSelectedRows();
+
+    if(newRowCol.col.colDef.name !== 'selectionRowHeaderCol' && this.multiSelect === 'true') {
+        this.gridOptions.onRowSelect(newRowCol.row);
+    }
+
+    if(newRowCol.col.colDef.onCellSelect !== undefined) {
+        newRowCol.col.colDef.onCellSelect(newRowCol.col, newRowCol.row);
+    }
+};
+
+SriUiGridController.prototype.saveSortInfo = function(grid, sortColumns) {
+
+    if(this.gridOptions.onSort !== undefined) {
+        this.gridOptions.onSort(grid, sortColumns);
+    } else if (sortColumns.length !== 0) {
+        //$localStorage[vm.appId + 'sortField'] = sortColumns;
+        this.gridOptions.sortFields = sortColumns[0].field;
+        this.gridOptions.sortDirections = sortColumns[0].sort.direction;
+    }
+
+    this.getData();
+};
+
+SriUiGridController.prototype.onRowSelect = function(row) {
+    if(this.multiSelect === undefined || this.multiSelect === 'false') {
+        this.gridOptions.onRowSelect(row);
+    }
+    this.gridOptions.selectedRows = this.gridApi.selection.getSelectedRows();
+};
+
+SriUiGridController.prototype.isRowSelectable = function() {
+    this.gridValues.isRowSelectable = this.gridOptions.isRowSelectable;
+};
+
+//SriUiGridController.prototype.restoreGrid = function() {
+//    var appGrid = this.appId + 'grid';
+//    if(this.localStorage[appGrid]) {
+//        this.gridApi.saveState.restore(null,  this.localStorage[appGrid]);
+//    }
+//};
+
+SriUiGridController.prototype.defaultGridValues = function(uiGridConstants) {
+    var singleRowSelect = this.multiSelect === undefined || this.multiSelect === 'false';
+    var scrollBars = singleRowSelect ? uiGridConstants.scrollbars.NEVER : uiGridConstants.scrollbars.ALWAYS;
+    return {
+        // flatEntityAccess: true,
+        enableHorizontalScrollbar : uiGridConstants.scrollbars.NEVER,
+        enableVerticalScrollbar: uiGridConstants.scrollbars.NEVER,
+        useExternalSorting: true,
+        enableGridMenu: true,
+        enableColumnResizing: true,
+        enableColumnReordering: true,
+        enableRowSelection: true,
+        enableRowHeaderSelection: singleRowSelect === false,
+        multiSelect: singleRowSelect === false,
+        selectedItems: [],
+    };
+};
+
+SriUiGridController.prototype.defaultPaginationOptions = function() {
+    return {
+        currentPage: 1,
+        pageSize: 20,
+        maxSize: 5,
+        totalResults: null
+    };
+};
+
+SriUiGridController.prototype.serviceArgs = function() {
+    return {
+        pageSize: this.paginationInfo.pageSize,
+        pageId: this.paginationInfo.currentPage,
+
+        sortBy: this.gridOptions.sortFields,
+        sortOrder: this.gridOptions.sortDirections,
+
+        filter: this.searchFilterFormat()
+    };
+};
+
+SriUiGridController.prototype.onBack =function() {
+    var indexOf = this.gridValues.data.indexOf(this.gridOptions.selectedRows[0]);
+    if(indexOf === 0 && this.paginationInfo.currentPage !== 1){
+        this.paginationInfo.currentPage = this.paginationInfo.currentPage - 1;
+        var args = this.serviceArgs();
+        var that = this;
+        this.getResource().then(function(data) {
+            that.updateGridData(data);
+            indexOf = that.paginationInfo.pageSize;
+            that.gridApi.grid.modifyRows(that.gridValues.data);
+            that.gridApi.selection.selectRow(that.gridValues.data[indexOf-1]);
+        });
+        return;
+    }
+    this.gridApi.selection.selectRow(this.gridValues.data[indexOf-1]);
+};
+
+SriUiGridController.prototype.onNext =function() {
+    var indexOf = this.gridValues.data.indexOf(this.gridOptions.selectedRows[0]);
+    if(indexOf >= (this.paginationInfo.pageSize-1)){
+        this.paginationInfo.currentPage = this.paginationInfo.currentPage + 1;
+        var args = this.serviceArgs();
+        var that = this;
+        this.getResource().then(function(data) {
+            that.updateGridData(data);
+            indexOf = -1;
+            that.gridApi.grid.modifyRows(that.gridValues.data);
+            that.gridApi.selection.selectRow(that.gridValues.data[indexOf+1]);
+        });
+        return;
+    }
+    this.gridApi.selection.selectRow(this.gridValues.data[indexOf+1]);
+};
+
+SriUiGridController.prototype.getData =function() {
+    var args = this.serviceArgs();
+
+    var that = this;
+    this.getResource().then(function (data) {
+        that.gridValues.data = data.entity ? data.entity : [];
+        that.gridOptions.data = data.entity ? data.entity : [];
+        that.paginationInfo.totalResults = data.count;
+        //that.restoreGrid();
+    });
+};
+
+SriUiGridController.prototype.updateGridData =function(list) {
+    this.gridValues.data = list.data.entity;
+    this.paginationInfo.totalResults = list.data.count;
+    //this.restoreGrid();
+};
+
+SriUiGridController.prototype.getResource =function() {
+    var args = this.serviceArgs();
+
+    return this.apiService.invoke({
+        url: this.url,
+        params: args
+    });
+};
+
+SriUiGridController.prototype.searchFilterFormat=function() {
+
+    this.createSearchString = function(filter, fieldName, fieldValue ) {
+        if(fieldValue !== "" && fieldValue !== undefined) {
+            filter = filter + fieldName + "::" + fieldValue;
+            filter = filter + "|";
+        }
+        return filter;
+    };
+
+    this.formattedSearchFilter = function() {
+
+        if(this.searchFilter === undefined) {
+            return;
+        }
+
+        var filter = "";
+        var that = this;
+        Object.keys(this.searchFilter).forEach(function(key) {
+            filter = that.createSearchString(filter, key, that.searchFilter[key]);
+        });
+
+        return  filter;
+    };
+
+    return this.formattedSearchFilter();
+};
+
+//HTML Sri-ui-grid.html
+
+
+<div>
+
+    <div id="grid" ui-grid="vm.gridValues" ui-grid-resize-columns ui-grid-selection ui-grid-move-columns ui-grid-save-state ui-grid-auto-resize class="grid-height"></div>
+
+    <div class="text-center" ng-if="vm.disablePagination === undefined">
+        <uib-pagination direction-links="true" boundary-links="true" total-items="vm.paginationInfo.totalResults" items-per-page="vm.paginationInfo.pageSize"
+                        max-size="vm.paginationInfo.maxSize" rotate="false" num-pages="numPages" ng-model="vm.paginationInfo.currentPage" ng-change="vm.getData()"> </uib-pagination>
+    </div>
+</div>
+
+
+// multi selction grid   Sri-ui-multiSelect-grid.html
+
+<div>
+    <div id="grid" ui-grid="vm.gridValues" ui-grid-resize-columns ui-grid-selection ui-grid-move-columns ui-grid-cellNav ui-grid-save-state ui-grid-auto-resize class="grid-height"></div>
+
+    <div class="text-center" ng-if="vm.disablePagination === undefined">
+        <uib-pagination direction-links="true" boundary-links="true" total-items="vm.paginationInfo.totalResults" items-per-page="vm.paginationInfo.pageSize"
+                        max-size="vm.paginationInfo.maxSize" rotate="false" num-pages="numPages" ng-model="vm.paginationInfo.currentPage" ng-change="vm.getData()"> </uib-pagination>
+    </div>
+</div>
